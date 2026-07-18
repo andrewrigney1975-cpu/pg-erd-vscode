@@ -15,6 +15,13 @@ hand-rolled inline SVG, same as the rest of a normal VS Code extension.
 - **Schema-grouped containers** — each Postgres schema becomes a dashed container box, grouping tables
   that share a common function (`public`, `billing`, `auth`, ...). Click a schema's header to
   collapse/expand it.
+- **Custom table groups** — if your real schema doesn't already split things up the way you'd like
+  visually (e.g. everything lives in one big `public` schema), the **Groups…** toolbar button lets you
+  bucket tables into your own named groups (e.g. "Operational", "Governance", "Administration") that
+  render as the same dashed containers, entirely independent of the real Postgres schema — no database
+  changes required. It's a bulk operation: pick or create a group name, then check off every table
+  that belongs to it from a multi-select list. Tables left ungrouped stay in their real schema's
+  container.
 - **Standard crow's-foot ER notation** — mandatory/optional, one/many markers derived from real FK
   nullability and uniqueness; a key glyph on primary-key columns and a link glyph on foreign-key
   columns.
@@ -39,7 +46,8 @@ hand-rolled inline SVG, same as the rest of a normal VS Code extension.
 2. Click **Add Connection** (or the `+` in the view title bar) and fill in the connection details.
    The extension will test the connection before saving (you can still save if the test fails).
 3. Click the saved connection to open its ERD. Use the toolbar to zoom/reset/export, drag tables to
-   rearrange them, and click a schema's header to collapse it.
+   rearrange them, click a schema's header to collapse it, or use **Groups…** to organize tables into
+   your own named containers.
 4. Right-click a connection for Edit / Duplicate / Delete.
 
 ## Settings

@@ -84,11 +84,44 @@ export interface DiagramLayout {
   /** Keyed by `${schema}.${table}`. Entries are only present once a node has been moved from its auto layout position. */
   positions: Record<string, NodePosition>;
   viewBox: ViewBoxState | null;
-  collapsedSchemas: string[];
+  /** Names of groups (real schema names or custom group names) currently collapsed. */
+  collapsedGroups: string[];
+  /**
+   * Keyed by `${schema}.${table}`. When present, overrides which visual group container a
+   * table renders in -- independent of its real Postgres schema. Lets a diagram be organized
+   * by function ("Operational", "Governance", ...) without actually restructuring the database.
+   */
+  tableGroupOverrides: Record<string, string>;
 }
 
 export function emptyLayout(): DiagramLayout {
-  return { positions: {}, viewBox: null, collapsedSchemas: [] };
+  return { positions: {}, viewBox: null, collapsedGroups: [], tableGroupOverrides: {} };
+}
+
+/**
+ * Fills in defaults for anything missing from a layout loaded out of persistent storage.
+ * Data saved by an older build of this extension won't have fields added since (e.g.
+ * `tableGroupOverrides` didn't exist before this session) -- trusting it to match the current
+ * `DiagramLayout` shape without checking crashes the webview the moment it's read. Also
+ * migrates the old `collapsedSchemas` field name forward instead of silently dropping it.
+ */
+export function normalizeLayout(raw: unknown): DiagramLayout {
+  if (!raw || typeof raw !== 'object') {
+    return emptyLayout();
+  }
+  const r = raw as Partial<DiagramLayout> & { collapsedSchemas?: unknown };
+  const collapsedGroups = Array.isArray(r.collapsedGroups)
+    ? r.collapsedGroups
+    : Array.isArray(r.collapsedSchemas)
+      ? (r.collapsedSchemas as string[])
+      : [];
+  return {
+    positions: r.positions && typeof r.positions === 'object' ? r.positions : {},
+    viewBox: r.viewBox ?? null,
+    collapsedGroups,
+    tableGroupOverrides:
+      r.tableGroupOverrides && typeof r.tableGroupOverrides === 'object' ? r.tableGroupOverrides : {},
+  };
 }
 
 export function tableKey(schema: string, table: string): string {
@@ -126,11 +159,18 @@ export interface HostErrorMessage {
   message: string;
 }
 
+/** Pushed after the host applies a group-membership change, so the webview re-renders in place. */
+export interface LayoutUpdatedMessage {
+  type: 'layoutUpdated';
+  layout: DiagramLayout;
+}
+
 export type HostToWebviewMessage =
   | InitMessage
   | ThemeChangedMessage
   | RefreshedMessage
-  | HostErrorMessage;
+  | HostErrorMessage
+  | LayoutUpdatedMessage;
 
 export interface WebviewReadyMessage {
   type: 'ready';
@@ -158,9 +198,16 @@ export interface RequestRefreshMessage {
   type: 'requestRefresh';
 }
 
+/** Asks the host to run the bulk "assign tables to a group" QuickPick flow. */
+export interface ManageGroupsRequestMessage {
+  type: 'manageGroupsRequest';
+  tables: { schema: string; name: string }[];
+}
+
 export type WebviewToHostMessage =
   | WebviewReadyMessage
   | SaveLayoutMessage
   | ExportSvgMessage
   | ExportPngMessage
-  | RequestRefreshMessage;
+  | RequestRefreshMessage
+  | ManageGroupsRequestMessage;

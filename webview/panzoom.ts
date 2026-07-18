@@ -98,7 +98,7 @@ export class PanZoomController {
         return;
       }
       const target = e.target as Element;
-      if (target.closest('.pgerd-table-header') || target.closest('.pgerd-schema-header')) {
+      if (target.closest('.pgerd-table-header') || target.closest('.pgerd-group-header')) {
         return;
       }
       this.isPanning = true;

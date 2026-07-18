@@ -6,9 +6,9 @@ export const ROW_HEIGHT = 22;
 export const TABLE_MIN_WIDTH = 200;
 export const TABLE_MAX_WIDTH = 360;
 const TABLE_GUTTER = 44;
-const SCHEMA_GUTTER = 72;
-const SCHEMA_PADDING = 24;
-const SCHEMA_HEADER_HEIGHT = 34;
+const GROUP_GUTTER = 72;
+const GROUP_PADDING = 24;
+const GROUP_HEADER_HEIGHT = 34;
 
 export interface ColumnLayout {
   column: ColumnModel;
@@ -26,7 +26,11 @@ export interface TableBox {
   columns: ColumnLayout[];
 }
 
-export interface SchemaContainer {
+/**
+ * A visual container box. Its `name` is usually a real Postgres schema name, but can also be a
+ * custom group name from `DiagramLayout.tableGroupOverrides` -- the two are rendered identically.
+ */
+export interface GroupContainer {
   name: string;
   x: number;
   y: number;
@@ -43,8 +47,13 @@ export interface DiagramBounds {
 
 export interface DiagramGeometry {
   tables: Map<string, TableBox>;
-  schemas: SchemaContainer[];
+  groups: GroupContainer[];
   bounds: DiagramBounds;
+}
+
+/** Which container a table renders in: its manually-assigned group if any, else its real schema. */
+export function effectiveGroupName(table: TableModel, layout: DiagramLayout): string {
+  return layout.tableGroupOverrides[tableKey(table.schema, table.name)] ?? table.schema;
 }
 
 function estimateTableWidth(table: TableModel): number {
@@ -74,7 +83,7 @@ interface RelativePlacement {
   totalHeight: number;
 }
 
-/** Target width:height ratio for a schema's auto-packed table grid. */
+/** Target width:height ratio for a group's auto-packed table grid. */
 const TARGET_ASPECT_RATIO = 16 / 10;
 
 /** Lays `sized` out in a `cols`-wide row-major grid and measures the actual resulting box. */
@@ -141,8 +150,8 @@ function chooseColumnCount(sized: SizedTable[], maxColumns: number): number {
   return bestCols;
 }
 
-/** Packs a schema's tables into an aligned grid, relative to (0,0), targeting a 16:10 box. */
-function autoLayoutSchema(tables: TableModel[], maxColumns: number): RelativePlacement {
+/** Packs a group's tables into an aligned grid, relative to (0,0), targeting a 16:10 box. */
+function autoLayoutGroup(tables: TableModel[], maxColumns: number): RelativePlacement {
   const sized: SizedTable[] = tables.map((t) => ({
     table: t,
     width: estimateTableWidth(t),
@@ -157,31 +166,32 @@ export function computeLayout(
   layout: DiagramLayout,
   maxSchemaColumns = 20
 ): DiagramGeometry {
-  const tablesBySchema = new Map<string, TableModel[]>();
+  const tablesByGroup = new Map<string, TableModel[]>();
   for (const t of db.tables) {
-    const list = tablesBySchema.get(t.schema) ?? [];
+    const group = effectiveGroupName(t, layout);
+    const list = tablesByGroup.get(group) ?? [];
     list.push(t);
-    tablesBySchema.set(t.schema, list);
+    tablesByGroup.set(group, list);
   }
 
-  const schemaNames = [...tablesBySchema.keys()].sort((a, b) => a.localeCompare(b));
+  const groupNames = [...tablesByGroup.keys()].sort((a, b) => a.localeCompare(b));
 
   const tables = new Map<string, TableBox>();
   let cursorX = 0;
 
-  for (const schemaName of schemaNames) {
-    if (layout.collapsedSchemas.includes(schemaName)) {
+  for (const groupName of groupNames) {
+    if (layout.collapsedGroups.includes(groupName)) {
       continue;
     }
-    const schemaTables = (tablesBySchema.get(schemaName) ?? [])
+    const groupTables = (tablesByGroup.get(groupName) ?? [])
       .slice()
-      .sort((a, b) => a.name.localeCompare(b.name));
-    const { positions, totalWidth } = autoLayoutSchema(schemaTables, maxSchemaColumns);
+      .sort((a, b) => `${a.schema}.${a.name}`.localeCompare(`${b.schema}.${b.name}`));
+    const { positions, totalWidth } = autoLayoutGroup(groupTables, maxSchemaColumns);
 
-    const originX = cursorX + SCHEMA_PADDING;
-    const originY = SCHEMA_HEADER_HEIGHT + SCHEMA_PADDING;
+    const originX = cursorX + GROUP_PADDING;
+    const originY = GROUP_HEADER_HEIGHT + GROUP_PADDING;
 
-    for (const t of schemaTables) {
+    for (const t of groupTables) {
       const key = tableKey(t.schema, t.name);
       const auto = positions.get(key)!;
       const saved = layout.positions[key];
@@ -199,38 +209,38 @@ export function computeLayout(
       });
     }
 
-    cursorX += Math.max(totalWidth, TABLE_MIN_WIDTH) + SCHEMA_PADDING * 2 + SCHEMA_GUTTER;
+    cursorX += Math.max(totalWidth, TABLE_MIN_WIDTH) + GROUP_PADDING * 2 + GROUP_GUTTER;
   }
 
-  const schemas: SchemaContainer[] = [];
-  for (const schemaName of schemaNames) {
-    if (layout.collapsedSchemas.includes(schemaName)) {
+  const groups: GroupContainer[] = [];
+  for (const groupName of groupNames) {
+    if (layout.collapsedGroups.includes(groupName)) {
       continue;
     }
-    const members = (tablesBySchema.get(schemaName) ?? []).map(
+    const members = (tablesByGroup.get(groupName) ?? []).map(
       (t) => tables.get(tableKey(t.schema, t.name))!
     );
     if (members.length === 0) {
       continue;
     }
-    const minX = Math.min(...members.map((b) => b.x)) - SCHEMA_PADDING;
-    const minY = Math.min(...members.map((b) => b.y)) - SCHEMA_PADDING - SCHEMA_HEADER_HEIGHT;
-    const maxX = Math.max(...members.map((b) => b.x + b.width)) + SCHEMA_PADDING;
-    const maxY = Math.max(...members.map((b) => b.y + b.height)) + SCHEMA_PADDING;
-    schemas.push({ name: schemaName, x: minX, y: minY, width: maxX - minX, height: maxY - minY });
+    const minX = Math.min(...members.map((b) => b.x)) - GROUP_PADDING;
+    const minY = Math.min(...members.map((b) => b.y)) - GROUP_PADDING - GROUP_HEADER_HEIGHT;
+    const maxX = Math.max(...members.map((b) => b.x + b.width)) + GROUP_PADDING;
+    const maxY = Math.max(...members.map((b) => b.y + b.height)) + GROUP_PADDING;
+    groups.push({ name: groupName, x: minX, y: minY, width: maxX - minX, height: maxY - minY });
   }
 
   let bounds: DiagramBounds = { minX: 0, minY: 0, maxX: 800, maxY: 600 };
-  if (schemas.length > 0) {
+  if (groups.length > 0) {
     bounds = {
-      minX: Math.min(...schemas.map((s) => s.x)),
-      minY: Math.min(...schemas.map((s) => s.y)),
-      maxX: Math.max(...schemas.map((s) => s.x + s.width)),
-      maxY: Math.max(...schemas.map((s) => s.y + s.height)),
+      minX: Math.min(...groups.map((s) => s.x)),
+      minY: Math.min(...groups.map((s) => s.y)),
+      maxX: Math.max(...groups.map((s) => s.x + s.width)),
+      maxY: Math.max(...groups.map((s) => s.y + s.height)),
     };
   }
 
-  return { tables, schemas, bounds };
+  return { tables, groups, bounds };
 }
 
 export function columnRowCenterY(box: TableBox, rowIndex: number): number {

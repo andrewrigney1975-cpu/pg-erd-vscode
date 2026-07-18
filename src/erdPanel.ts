@@ -1,7 +1,17 @@
 import * as vscode from 'vscode';
 import { ConnectionManager, layoutKey } from './connectionManager';
 import { IntrospectionOptions, introspectDatabase } from './pgIntrospection';
-import { ConnectionProfile, DiagramLayout, ExportPngMessage, ExportSvgMessage, ThemeKind, WebviewToHostMessage, emptyLayout } from './types';
+import {
+  ConnectionProfile,
+  DiagramLayout,
+  ExportPngMessage,
+  ExportSvgMessage,
+  ManageGroupsRequestMessage,
+  ThemeKind,
+  WebviewToHostMessage,
+  normalizeLayout,
+  tableKey,
+} from './types';
 
 export class ErdPanelManager {
   private readonly panels = new Map<string, vscode.WebviewPanel>();
@@ -61,6 +71,9 @@ export class ErdPanelManager {
         case 'requestRefresh':
           await this.refresh(panel, profile);
           break;
+        case 'manageGroupsRequest':
+          await this.manageGroups(panel, profile, msg);
+          break;
       }
     });
   }
@@ -97,8 +110,87 @@ export class ErdPanelManager {
     }
   }
 
+  /**
+   * Bulk "assign tables to a group" flow: pick or create a group name, then a multi-select
+   * QuickPick over every table (pre-checked by current membership) decides who's in it. This
+   * is deliberately a bulk operation rather than one-table-at-a-time -- the whole point is to
+   * bucket a schema's worth of tables (dozens, easily) into a handful of named groups without
+   * touching the database, so it needs to be fast for that many tables at once.
+   */
+  private async manageGroups(
+    panel: vscode.WebviewPanel,
+    profile: ConnectionProfile,
+    msg: ManageGroupsRequestMessage
+  ): Promise<void> {
+    const layout = this.loadLayout(profile.id);
+    const existingGroups = [...new Set(Object.values(layout.tableGroupOverrides))].sort((a, b) =>
+      a.localeCompare(b)
+    );
+
+    const NEW_GROUP_ITEM = '$(add) Create new group…';
+    const groupPick = await vscode.window.showQuickPick(
+      [...existingGroups, NEW_GROUP_ITEM],
+      {
+        title: 'Manage Table Groups (1/2)',
+        placeHolder: 'Pick a group to edit, or create a new one',
+        ignoreFocusOut: true,
+      }
+    );
+    if (!groupPick) {
+      return;
+    }
+
+    let groupName = groupPick;
+    if (groupPick === NEW_GROUP_ITEM) {
+      const name = await vscode.window.showInputBox({
+        title: 'New group name',
+        prompt: 'e.g. Operational, Governance, Administration',
+        ignoreFocusOut: true,
+        validateInput: (v) => (v.trim().length === 0 ? 'Name cannot be empty' : undefined),
+      });
+      if (!name) {
+        return;
+      }
+      groupName = name.trim();
+    }
+
+    const sortedTables = [...msg.tables].sort((a, b) =>
+      `${a.schema}.${a.name}`.localeCompare(`${b.schema}.${b.name}`)
+    );
+    const tableItems = sortedTables.map((t) => {
+      const key = tableKey(t.schema, t.name);
+      return {
+        label: `${t.schema}.${t.name}`,
+        picked: layout.tableGroupOverrides[key] === groupName,
+        key,
+      };
+    });
+
+    const picked = await vscode.window.showQuickPick(tableItems, {
+      title: `Manage Table Groups (2/2) — "${groupName}"`,
+      placeHolder: 'Check every table that belongs to this group',
+      canPickMany: true,
+      ignoreFocusOut: true,
+    });
+    if (picked === undefined) {
+      return;
+    }
+
+    const pickedKeys = new Set(picked.map((p) => p.key));
+    for (const item of tableItems) {
+      if (pickedKeys.has(item.key)) {
+        layout.tableGroupOverrides[item.key] = groupName;
+      } else if (layout.tableGroupOverrides[item.key] === groupName) {
+        delete layout.tableGroupOverrides[item.key];
+      }
+    }
+
+    await this.saveLayout(profile.id, layout);
+    panel.webview.postMessage({ type: 'layoutUpdated', layout });
+  }
+
   private loadLayout(connectionId: string): DiagramLayout {
-    return this.context.globalState.get<DiagramLayout>(layoutKey(connectionId)) ?? emptyLayout();
+    return normalizeLayout(this.context.globalState.get(layoutKey(connectionId)));
   }
 
   private async saveLayout(connectionId: string, layout: DiagramLayout): Promise<void> {
@@ -171,6 +263,7 @@ export class ErdPanelManager {
       <button id="zoomInBtn" title="Zoom in">+</button>
       <button id="resetBtn" title="Reset view">Reset</button>
       <button id="refreshBtn" title="Re-read schema from the database">Refresh</button>
+      <button id="groupsBtn" title="Bucket tables into custom named groups, independent of their real schema">Groups…</button>
       <button id="exportBtn" class="primary" title="Export as SVG">Export SVG</button>
       <button id="exportPngBtn" class="primary" title="Export as a 4x-resolution PNG">Export PNG (4x)</button>
     </div>

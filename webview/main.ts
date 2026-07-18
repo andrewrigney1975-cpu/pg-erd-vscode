@@ -133,18 +133,18 @@ function attachInteractionHandlers(): void {
     });
   });
 
-  svgEl.querySelectorAll('.pgerd-schema-header[data-collapse-toggle]').forEach((el) => {
+  svgEl.querySelectorAll('.pgerd-group-header[data-collapse-toggle]').forEach((el) => {
     el.addEventListener('click', (evt) => {
       evt.stopPropagation();
-      const name = el.getAttribute('data-schema');
+      const name = el.getAttribute('data-group');
       if (!name) {
         return;
       }
-      const idx = layout.collapsedSchemas.indexOf(name);
+      const idx = layout.collapsedGroups.indexOf(name);
       if (idx === -1) {
-        layout.collapsedSchemas.push(name);
+        layout.collapsedGroups.push(name);
       } else {
-        layout.collapsedSchemas.splice(idx, 1);
+        layout.collapsedGroups.splice(idx, 1);
       }
       renderAll(false);
       scheduleSaveLayout();
@@ -194,6 +194,15 @@ document.getElementById('resetBtn')?.addEventListener('click', () => panzoom?.re
 document.getElementById('refreshBtn')?.addEventListener('click', () => {
   clearError();
   postToHost({ type: 'requestRefresh' });
+});
+document.getElementById('groupsBtn')?.addEventListener('click', () => {
+  if (!database) {
+    return;
+  }
+  postToHost({
+    type: 'manageGroupsRequest',
+    tables: database.tables.map((t) => ({ schema: t.schema, name: t.name })),
+  });
 });
 document.getElementById('exportBtn')?.addEventListener('click', () => {
   if (!geometry) {
@@ -250,6 +259,10 @@ onHostMessage((msg) => {
       renderAll(false);
       break;
     case 'themeChanged':
+      renderAll(false);
+      break;
+    case 'layoutUpdated':
+      layout = msg.layout;
       renderAll(false);
       break;
     case 'error':
