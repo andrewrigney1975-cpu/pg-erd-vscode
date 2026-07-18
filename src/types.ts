@@ -174,12 +174,24 @@ export interface LayoutUpdatedMessage {
   layout: DiagramLayout;
 }
 
+/**
+ * Pushed after the host clears every manually-dragged table position (Reset Layout button) --
+ * a distinct message from LayoutUpdatedMessage so the webview knows to ALSO reset the view (fit
+ * everything back to the freshly recomputed auto-layout), where a plain group-membership edit
+ * deliberately leaves the current pan/zoom alone.
+ */
+export interface LayoutResetMessage {
+  type: 'layoutReset';
+  layout: DiagramLayout;
+}
+
 export type HostToWebviewMessage =
   | InitMessage
   | ThemeChangedMessage
   | RefreshedMessage
   | HostErrorMessage
-  | LayoutUpdatedMessage;
+  | LayoutUpdatedMessage
+  | LayoutResetMessage;
 
 export interface WebviewReadyMessage {
   type: 'ready';
@@ -213,10 +225,21 @@ export interface ManageGroupsRequestMessage {
   tables: { schema: string; name: string }[];
 }
 
+/**
+ * Asks the host to clear every manually-dragged table position for this connection (after a
+ * confirmation dialog) -- Groups (tableGroupOverrides), collapsed state, and group colors are
+ * deliberately left untouched; only `positions` is reset, letting the auto-layout algorithm
+ * place everything again from scratch.
+ */
+export interface ResetLayoutRequestMessage {
+  type: 'resetLayoutRequest';
+}
+
 export type WebviewToHostMessage =
   | WebviewReadyMessage
   | SaveLayoutMessage
   | ExportSvgMessage
   | ExportPngMessage
   | RequestRefreshMessage
-  | ManageGroupsRequestMessage;
+  | ManageGroupsRequestMessage
+  | ResetLayoutRequestMessage;

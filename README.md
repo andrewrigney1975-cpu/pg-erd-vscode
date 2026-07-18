@@ -14,7 +14,8 @@ hand-rolled inline SVG, same as the rest of a normal VS Code extension.
   nullability.
 - **Schema-grouped containers** — each Postgres schema becomes a dashed container box, grouping tables
   that share a common function (`public`, `billing`, `auth`, ...). Click a schema's header to
-  collapse/expand it.
+  collapse/expand it — collapsed groups show as small pill-shaped chips stacked in a column to the
+  left of the visible diagram, top-aligned with it.
 - **Custom table groups** — if your real schema doesn't already split things up the way you'd like
   visually (e.g. everything lives in one big `public` schema), the **Groups…** toolbar button lets you
   bucket tables into your own named groups (e.g. "Operational", "Governance", "Administration") that
@@ -22,6 +23,12 @@ hand-rolled inline SVG, same as the rest of a normal VS Code extension.
   changes required. It's a bulk operation: pick or create a group name, then check off every table
   that belongs to it from a multi-select list. Tables left ungrouped stay in their real schema's
   container.
+- **Relationship-clustered auto layout** — tables within a group, and groups within the diagram,
+  are ordered by foreign-key relationship proximity (not alphabetically): directly-related tables
+  land in the same or neighboring grid cells, and groups with more cross-group relationships end up
+  positioned closer together. Still a plain grid/masonry packer under the hood (deterministic,
+  overlap-free by construction, consistent spacing around every group) — clustering only changes
+  the visiting order fed into it, never the packing mechanics themselves.
 - **Standard crow's-foot ER notation** — mandatory/optional, one/many markers derived from real FK
   nullability and uniqueness; a key glyph on primary-key columns and a link glyph on foreign-key
   columns.
@@ -30,10 +37,12 @@ hand-rolled inline SVG, same as the rest of a normal VS Code extension.
   runtime harness during development). Routing picks whichever of left/right or top/bottom exits
   matches how the two tables are actually separated, so two tables stacked in the same auto-layout
   grid column route vertically instead of backtracking through the source table.
-- **Pan, zoom, reset, export** — mouse-wheel zoom, drag-to-pan, a Reset button that returns to a
-  fit-all view, "Export SVG" (a fully standalone, self-contained SVG file — theme colors are resolved
-  and inlined at export time, so it renders correctly outside VS Code too), and "Export PNG (2x)"
-  (rasterized in the webview via `<canvas>`, no extra dependency).
+- **Pan, zoom, reset, export** — mouse-wheel zoom, drag-to-pan, a "Reset View" button that returns
+  to a fit-all view, a "Reset Layout" button (confirmation required) that clears every manually-
+  dragged table position and lets the auto-layout place everything again — Groups and collapsed
+  state are kept — "Export SVG" (a fully standalone, self-contained SVG file — theme colors are
+  resolved and inlined at export time, so it renders correctly outside VS Code too), and "Export
+  PNG (2x)" (rasterized in the webview via `<canvas>`, no extra dependency).
 - **Draggable layout, persisted per connection** — drag any table to reposition it; the layout
   (positions, pan/zoom, collapsed schemas) is saved automatically and restored next time you open
   that connection's ERD.

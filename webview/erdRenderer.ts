@@ -1,6 +1,6 @@
 import { DiagramLayout, tableKey } from '../src/types';
 import { escapeXml, formatDataType } from './format';
-import { DiagramGeometry, GroupContainer, ROW_HEIGHT, TABLE_HEADER_HEIGHT, TableBox } from './layout';
+import { CHIP_HEIGHT, DiagramGeometry, estimateChipWidth, GroupContainer, ROW_HEIGHT, TABLE_HEADER_HEIGHT, TableBox } from './layout';
 import { Point, RelationshipMarker, RoutedRelationship } from './routing';
 import { Palette } from './theme';
 
@@ -81,12 +81,7 @@ function groupColor(name: string, palette: Palette, layout: DiagramLayout): stri
   return colors[idx % colors.length];
 }
 
-function renderGroupContainer(
-  container: GroupContainer,
-  palette: Palette,
-  layout: DiagramLayout,
-  collapsed: boolean
-): string {
+function renderGroupContainer(container: GroupContainer, palette: Palette, layout: DiagramLayout): string {
   const color = groupColor(container.name, palette, layout);
   return `<g class="pgerd-group" data-group="${escapeXml(container.name)}">
     <rect x="${container.x}" y="${container.y}" width="${container.width}" height="${container.height}" rx="10"
@@ -95,18 +90,25 @@ function renderGroupContainer(
     <rect class="pgerd-group-header" data-group="${escapeXml(container.name)}" data-collapse-toggle="1"
       x="${container.x}" y="${container.y}" width="160" height="22" fill="transparent" style="cursor:pointer"/>
     <text x="${container.x + 10}" y="${container.y + 16}" font-size="12" font-weight="700" letter-spacing="0.4"
-      fill="${color}">${escapeXml(container.name)} ${collapsed ? '▸' : '▾'}</text>
+      fill="${color}">${escapeXml(container.name)} ▾</text>
   </g>`;
 }
 
-function renderCollapsedChip(name: string, x: number, y: number, palette: Palette, layout: DiagramLayout): string {
+/** A collapsed group's chip in the stacked list to the left of the visible diagram (see renderDiagram). */
+function renderCollapsedChip(
+  name: string,
+  x: number,
+  y: number,
+  width: number,
+  palette: Palette,
+  layout: DiagramLayout
+): string {
   const color = groupColor(name, palette, layout);
-  const width = Math.max(90, name.length * 7.5 + 40);
   return `<g class="pgerd-group-chip" data-group="${escapeXml(name)}">
     <rect class="pgerd-group-header" data-group="${escapeXml(name)}" data-collapse-toggle="1"
-      x="${x}" y="${y}" width="${width}" height="26" rx="13"
+      x="${x}" y="${y}" width="${width}" height="${CHIP_HEIGHT}" rx="${CHIP_HEIGHT / 2}"
       fill="${palette.containerFill}" stroke="${color}" stroke-width="1.5" style="cursor:pointer"/>
-    <text x="${x + width / 2}" y="${y + 17}" font-size="12" font-weight="700" text-anchor="middle"
+    <text x="${x + width / 2}" y="${y + CHIP_HEIGHT / 2 + 4}" font-size="12" font-weight="700" text-anchor="middle"
       fill="${color}">${escapeXml(name)} ▸</text>
   </g>`;
 }
@@ -245,9 +247,7 @@ export function renderDiagram(
   const relMarkup = relationships
     .map((r) => renderRelationship(r, palette, highlight.relationshipKeys !== null && !highlight.relationshipKeys.has(r.key)))
     .join('\n');
-  const groupMarkup = geometry.groups
-    .map((g) => renderGroupContainer(g, palette, layout, false))
-    .join('\n');
+  const groupMarkup = geometry.groups.map((g) => renderGroupContainer(g, palette, layout)).join('\n');
   const tableMarkup = [...geometry.tables.values()]
     .map((box) =>
       renderTableBox(
@@ -259,17 +259,34 @@ export function renderDiagram(
     )
     .join('\n');
 
-  const collapsed = layout.collapsedGroups;
-  const chipMarkup = collapsed
-    .map((name, i) =>
-      renderCollapsedChip(name, geometry.bounds.minX, geometry.bounds.minY - 40 - i * 34, palette, layout)
-    )
+  // Collapsed groups render as a stacked list of chips to the LEFT of the visible diagram,
+  // top-aligned with it -- a fixed gutter clear of the leftmost table/group, one chip per row
+  // (CHIP_HEIGHT + CHIP_GAP apart), each right-aligned against that gutter so varying name
+  // lengths don't produce a ragged left edge. Deliberately NOT tied to any group's own clustered
+  // position (unlike a visible group's container) -- collapsing removes a group from the
+  // relationship-driven layout entirely, so its chip lives in its own separate column instead.
+  const collapsedNames = layout.collapsedGroups;
+  const CHIP_GAP = 10;
+  const CHIP_STACK_GUTTER = 30;
+  const chipWidths = collapsedNames.map((name) => estimateChipWidth(name));
+  const maxChipWidth = chipWidths.length > 0 ? Math.max(...chipWidths) : 0;
+  const stackLeftX = geometry.bounds.minX - CHIP_STACK_GUTTER - maxChipWidth;
+  const chipMarkup = collapsedNames
+    .map((name, i) => {
+      const w = chipWidths[i];
+      const x = stackLeftX + (maxChipWidth - w); // right-align each chip within the stack's column
+      const y = geometry.bounds.minY + i * (CHIP_HEIGHT + CHIP_GAP);
+      return renderCollapsedChip(name, x, y, w, palette, layout);
+    })
     .join('\n');
+  const stackHeight =
+    collapsedNames.length > 0 ? collapsedNames.length * CHIP_HEIGHT + (collapsedNames.length - 1) * CHIP_GAP : 0;
 
-  const minX = geometry.bounds.minX - CANVAS_PADDING;
-  const minY = geometry.bounds.minY - CANVAS_PADDING - collapsed.length * 34;
-  const width = geometry.bounds.maxX - geometry.bounds.minX + CANVAS_PADDING * 2;
-  const height = geometry.bounds.maxY - geometry.bounds.minY + CANVAS_PADDING * 2 + collapsed.length * 34;
+  const contentMinX = maxChipWidth > 0 ? stackLeftX : geometry.bounds.minX;
+  const minX = contentMinX - CANVAS_PADDING;
+  const minY = geometry.bounds.minY - CANVAS_PADDING;
+  const width = geometry.bounds.maxX - contentMinX + CANVAS_PADDING * 2;
+  const height = Math.max(geometry.bounds.maxY - geometry.bounds.minY, stackHeight) + CANVAS_PADDING * 2;
 
   const markup = `<g class="pgerd-relationships">${relMarkup}</g>
     <g class="pgerd-groups">${groupMarkup}</g>

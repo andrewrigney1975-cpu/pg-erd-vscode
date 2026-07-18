@@ -74,6 +74,9 @@ export class ErdPanelManager {
         case 'manageGroupsRequest':
           await this.manageGroups(panel, profile, msg);
           break;
+        case 'resetLayoutRequest':
+          await this.resetLayout(panel, profile);
+          break;
       }
     });
   }
@@ -189,6 +192,29 @@ export class ErdPanelManager {
     panel.webview.postMessage({ type: 'layoutUpdated', layout });
   }
 
+  /**
+   * "Reset Layout" toolbar button -- clears every manually-dragged table position for this
+   * connection so the auto-layout (relationship-clustered grouping, see webview/layout.ts)
+   * recomputes everything from scratch. Deliberately leaves tableGroupOverrides,
+   * groupColorAssignments, and collapsedGroups untouched -- this is about undoing accidental/
+   * stale drag positions, not discarding a user's custom Groups organization. Confirmed via a
+   * modal (this is destructive and, unlike most actions here, has no undo).
+   */
+  private async resetLayout(panel: vscode.WebviewPanel, profile: ConnectionProfile): Promise<void> {
+    const choice = await vscode.window.showWarningMessage(
+      `Reset the layout for "${profile.name}"? This clears every manually-dragged table position and lets the auto-layout place everything again. Groups and collapsed state are kept.`,
+      { modal: true },
+      'Reset Layout'
+    );
+    if (choice !== 'Reset Layout') {
+      return;
+    }
+    const layout = this.loadLayout(profile.id);
+    layout.positions = {};
+    await this.saveLayout(profile.id, layout);
+    panel.webview.postMessage({ type: 'layoutReset', layout });
+  }
+
   private loadLayout(connectionId: string): DiagramLayout {
     return normalizeLayout(this.context.globalState.get(layoutKey(connectionId)));
   }
@@ -261,7 +287,8 @@ export class ErdPanelManager {
       <div class="spacer"></div>
       <button id="zoomOutBtn" title="Zoom out">&minus;</button>
       <button id="zoomInBtn" title="Zoom in">+</button>
-      <button id="resetBtn" title="Reset view">Reset</button>
+      <button id="resetBtn" title="Reset View: return to the default fit-all pan/zoom">Reset View</button>
+      <button id="resetLayoutBtn" title="Reset Layout: clear every manually-dragged table position (Groups and collapsed state are kept)">Reset Layout</button>
       <button id="refreshBtn" title="Re-read schema from the database">Refresh</button>
       <button id="groupsBtn" title="Bucket tables into custom named groups, independent of their real schema">Groups…</button>
       <button id="exportBtn" class="primary" title="Export as SVG">Export SVG</button>

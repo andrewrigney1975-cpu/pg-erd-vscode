@@ -336,6 +336,9 @@ svgEl.addEventListener('pointerdown', (e) => {
 document.getElementById('zoomInBtn')?.addEventListener('click', () => panzoom?.zoomAtCenter(1 / 1.25));
 document.getElementById('zoomOutBtn')?.addEventListener('click', () => panzoom?.zoomAtCenter(1.25));
 document.getElementById('resetBtn')?.addEventListener('click', () => panzoom?.reset());
+document.getElementById('resetLayoutBtn')?.addEventListener('click', () => {
+  postToHost({ type: 'resetLayoutRequest' });
+});
 document.getElementById('refreshBtn')?.addEventListener('click', () => {
   clearError();
   postToHost({ type: 'requestRefresh' });
@@ -409,6 +412,10 @@ onHostMessage((msg) => {
     case 'layoutUpdated':
       layout = msg.layout;
       renderAll(false);
+      break;
+    case 'layoutReset':
+      layout = msg.layout;
+      renderAll(true);
       break;
     case 'error':
       showError(msg.message);
