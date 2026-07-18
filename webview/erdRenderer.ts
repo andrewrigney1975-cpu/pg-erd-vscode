@@ -1,4 +1,4 @@
-import { DiagramLayout } from '../src/types';
+import { DiagramLayout, tableKey } from '../src/types';
 import { escapeXml, formatDataType } from './format';
 import { DiagramGeometry, GroupContainer, ROW_HEIGHT, TABLE_HEADER_HEIGHT, TableBox } from './layout';
 import { Point, RelationshipMarker, RoutedRelationship } from './routing';
@@ -24,12 +24,13 @@ function fkIcon(x: number, y: number, color: string): string {
   </g>`;
 }
 
-function renderTableBox(box: TableBox, palette: Palette, selected: boolean): string {
+function renderTableBox(box: TableBox, palette: Palette, selected: boolean, dimmed: boolean): string {
   const id = sanitizeId(box.key);
   const rx = 5;
   const headerLabel = escapeXml(box.table.name);
   const strokeColor = selected ? palette.selectionBorder : palette.border;
   const strokeWidth = selected ? 2 : 1;
+  const groupClass = dimmed ? 'pgerd-table pgerd-dimmed' : 'pgerd-table';
 
   const rows = box.columns
     .map((col, idx) => {
@@ -53,7 +54,7 @@ function renderTableBox(box: TableBox, palette: Palette, selected: boolean): str
     })
     .join('\n');
 
-  return `<g class="pgerd-table" data-key="${escapeXml(box.key)}" transform="translate(${box.x},${box.y})">
+  return `<g class="${groupClass}" data-key="${escapeXml(box.key)}" transform="translate(${box.x},${box.y})">
     <clipPath id="clip-${id}"><rect x="0" y="0" width="${box.width}" height="${box.height}" rx="${rx}"/></clipPath>
     <g clip-path="url(#clip-${id})">
       <rect x="0" y="0" width="${box.width}" height="${box.height}" fill="${palette.entityFill}"/>
@@ -90,7 +91,7 @@ function renderGroupContainer(
   return `<g class="pgerd-group" data-group="${escapeXml(container.name)}">
     <rect x="${container.x}" y="${container.y}" width="${container.width}" height="${container.height}" rx="10"
       fill="${color}" fill-opacity="0.14" stroke="${color}" stroke-opacity="0.75"
-      stroke-width="1.5" stroke-dasharray="5 4"/>
+      stroke-width="1.5" stroke-dasharray="5 4" pointer-events="none"/>
     <rect class="pgerd-group-header" data-group="${escapeXml(container.name)}" data-collapse-toggle="1"
       x="${container.x}" y="${container.y}" width="160" height="22" fill="transparent" style="cursor:pointer"/>
     <text x="${container.x + 10}" y="${container.y + 16}" font-size="12" font-weight="700" letter-spacing="0.4"
@@ -172,10 +173,12 @@ function renderMarker(marker: RelationshipMarker, palette: Palette): string {
   return parts.join('\n');
 }
 
-function renderRelationship(r: RoutedRelationship, palette: Palette): string {
+function renderRelationship(r: RoutedRelationship, palette: Palette, dimmed: boolean): string {
   const title = `${r.fk.fromSchema}.${r.fk.fromTable}(${r.fk.fromColumns.join(', ')}) → ${r.fk.toSchema}.${r.fk.toTable}(${r.fk.toColumns.join(', ')})`;
-  return `<g class="pgerd-relationship" data-fk="${escapeXml(r.key)}">
+  const groupClass = dimmed ? 'pgerd-relationship pgerd-dimmed' : 'pgerd-relationship';
+  return `<g class="${groupClass}" data-fk="${escapeXml(r.key)}">
     <title>${escapeXml(title)}</title>
+    <path class="pgerd-connector-hitbox" d="${r.pathD}" fill="none" stroke="transparent" stroke-width="14" vector-effect="non-scaling-stroke"/>
     <path class="pgerd-connector-line" d="${r.pathD}" fill="none" stroke="${palette.relationshipLine}" stroke-width="1.4"/>
     <g class="pgerd-marker">${renderMarker(r.fromMarker, palette)}</g>
     <g class="pgerd-marker">${renderMarker(r.toMarker, palette)}</g>
@@ -189,19 +192,71 @@ export interface RenderedDiagram {
 
 const CANVAS_PADDING = 60;
 
+/**
+ * Click-to-highlight (ported from the Enkl.app Tables & Columns ERD): clicking a relationship
+ * connector keeps its own two tables and that one connector at full opacity and dims everything
+ * else; clicking a table keeps it plus every table/connector it's directly related to and dims the
+ * rest; clicking whitespace clears back to fully visible. `null` from both getters below means "no
+ * highlight active" -- nothing gets dimmed. A relationship click takes priority over a table
+ * selection (they're mutually exclusive states, see main.ts).
+ */
+export function computeHighlightSets(
+  relationships: RoutedRelationship[],
+  selectedTableKey: string | null,
+  selectedRelationshipKey: string | null
+): { tableKeys: Set<string> | null; relationshipKeys: Set<string> | null } {
+  if (selectedRelationshipKey) {
+    const rel = relationships.find((r) => r.key === selectedRelationshipKey);
+    if (rel) {
+      return {
+        tableKeys: new Set([tableKey(rel.fk.fromSchema, rel.fk.fromTable), tableKey(rel.fk.toSchema, rel.fk.toTable)]),
+        relationshipKeys: new Set([rel.key]),
+      };
+    }
+  }
+
+  if (selectedTableKey) {
+    const tableKeys = new Set<string>([selectedTableKey]);
+    const relationshipKeys = new Set<string>();
+    relationships.forEach((r) => {
+      const fromKey = tableKey(r.fk.fromSchema, r.fk.fromTable);
+      const toKey = tableKey(r.fk.toSchema, r.fk.toTable);
+      if (fromKey === selectedTableKey || toKey === selectedTableKey) {
+        tableKeys.add(fromKey);
+        tableKeys.add(toKey);
+        relationshipKeys.add(r.key);
+      }
+    });
+    return { tableKeys, relationshipKeys };
+  }
+
+  return { tableKeys: null, relationshipKeys: null };
+}
+
 export function renderDiagram(
   geometry: DiagramGeometry,
   relationships: RoutedRelationship[],
   layout: DiagramLayout,
   palette: Palette,
-  selectedKey: string | null
+  selectedKey: string | null,
+  selectedRelationshipKey: string | null = null
 ): RenderedDiagram {
-  const relMarkup = relationships.map((r) => renderRelationship(r, palette)).join('\n');
+  const highlight = computeHighlightSets(relationships, selectedKey, selectedRelationshipKey);
+  const relMarkup = relationships
+    .map((r) => renderRelationship(r, palette, highlight.relationshipKeys !== null && !highlight.relationshipKeys.has(r.key)))
+    .join('\n');
   const groupMarkup = geometry.groups
     .map((g) => renderGroupContainer(g, palette, layout, false))
     .join('\n');
   const tableMarkup = [...geometry.tables.values()]
-    .map((box) => renderTableBox(box, palette, box.key === selectedKey))
+    .map((box) =>
+      renderTableBox(
+        box,
+        palette,
+        box.key === selectedKey,
+        highlight.tableKeys !== null && !highlight.tableKeys.has(box.key)
+      )
+    )
     .join('\n');
 
   const collapsed = layout.collapsedGroups;

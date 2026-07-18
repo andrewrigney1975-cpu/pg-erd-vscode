@@ -26,6 +26,14 @@ export interface RoutedRelationship {
   pathD: string;
   fromMarker: RelationshipMarker;
   toMarker: RelationshipMarker;
+  /**
+   * The raw (pre-fillet) waypoint chain the path was built from -- main.ts's click-to-highlight
+   * fit-to-view uses this to compute a relationship's bounding box directly, rather than
+   * re-parsing `pathD`'s arc/line commands. Safe as an upper bound on the rendered curve's true
+   * extent: `roundedOrthogonalPath`'s fillets only cut corners INWARD (toward the segment
+   * midpoints), never bulge outward past the straight polyline they're rounding.
+   */
+  waypoints: Point[];
 }
 
 type Side = 'left' | 'right' | 'top' | 'bottom';
@@ -276,6 +284,7 @@ export function routeForeignKey(
     pathD,
     fromMarker,
     toMarker,
+    waypoints,
   };
 }
 

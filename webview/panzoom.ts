@@ -9,6 +9,10 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
+function now(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
 /** Drives pan/zoom/reset purely through the live SVG's viewBox attribute. */
 export class PanZoomController {
   private viewBox: ViewBox;
@@ -17,6 +21,7 @@ export class PanZoomController {
   private panStart = { x: 0, y: 0 };
   private panStartViewBox: ViewBox = { x: 0, y: 0, width: 0, height: 0 };
   private panScale = 1;
+  private animationFrameId: number | null = null;
   suspended = false;
 
   constructor(
@@ -38,9 +43,55 @@ export class PanZoomController {
     }
   }
 
+  getBaseViewBox(): ViewBox {
+    return { ...this.baseViewBox };
+  }
+
   reset(): void {
+    this.stopAnimation();
     this.viewBox = { ...this.baseViewBox };
     this.applyViewBox();
+  }
+
+  /**
+   * Smoothly eases the viewBox to `target` over `durationMs` (ease-out cubic) -- used by
+   * main.ts's click-to-highlight to fit-to-view the highlighted elements, and to animate back to
+   * the default fit-all view when a highlight is cleared. Deliberately bypasses `onChange`/layout
+   * persistence on every frame (and even on settling) -- this is a transient "where you're
+   * currently looking because of a highlight" state, not a deliberate repositioning the user did
+   * that should be remembered as the diagram's saved default view next time it's reopened.
+   */
+  animateTo(target: ViewBox, durationMs: number, onComplete?: () => void): void {
+    this.stopAnimation();
+    const start = { ...this.viewBox };
+    const startTime = now();
+    const ease = (t: number) => 1 - Math.pow(1 - t, 3);
+
+    const step = (): void => {
+      const t = Math.min(1, (now() - startTime) / durationMs);
+      const e = ease(t);
+      this.viewBox = {
+        x: start.x + (target.x - start.x) * e,
+        y: start.y + (target.y - start.y) * e,
+        width: start.width + (target.width - start.width) * e,
+        height: start.height + (target.height - start.height) * e,
+      };
+      this.applyViewBoxSilently();
+      if (t < 1) {
+        this.animationFrameId = requestAnimationFrame(step);
+      } else {
+        this.animationFrameId = null;
+        onComplete?.();
+      }
+    };
+    this.animationFrameId = requestAnimationFrame(step);
+  }
+
+  private stopAnimation(): void {
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
   }
 
   zoomAt(clientX: number, clientY: number, factor: number): void {
@@ -81,6 +132,12 @@ export class PanZoomController {
     const { x, y, width, height } = this.viewBox;
     this.svg.setAttribute('viewBox', `${x} ${y} ${width} ${height}`);
     this.onChange?.(this.getViewBox());
+  }
+
+  /** Same as applyViewBox() but skips the onChange/persistence callback -- see animateTo()'s doc comment. */
+  private applyViewBoxSilently(): void {
+    const { x, y, width, height } = this.viewBox;
+    this.svg.setAttribute('viewBox', `${x} ${y} ${width} ${height}`);
   }
 
   private attachHandlers(): void {

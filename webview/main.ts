@@ -1,5 +1,5 @@
 import { DatabaseModel, DiagramLayout, emptyLayout } from '../src/types';
-import { buildStandaloneSvg, renderDiagram } from './erdRenderer';
+import { buildStandaloneSvg, computeHighlightSets, renderDiagram } from './erdRenderer';
 import { escapeXml } from './format';
 import { computeLayout, DiagramGeometry, effectiveGroupName } from './layout';
 import { PanZoomController, ViewBox } from './panzoom';
@@ -9,6 +9,10 @@ import { Palette, resolvePalette } from './theme';
 import { onHostMessage, postToHost } from './vscodeApi';
 
 const PNG_EXPORT_SCALE = 2;
+/** Fixed diagram-unit margin around a fit-to-highlight view -- same convention as
+ *  erdRenderer.ts's own CANVAS_PADDING for the initial fit-all view. */
+const HIGHLIGHT_FIT_PADDING = 60;
+const HIGHLIGHT_ANIM_MS = 350;
 
 let database: DatabaseModel | null = null;
 let layout: DiagramLayout = emptyLayout();
@@ -16,6 +20,9 @@ let palette: Palette;
 let geometry: DiagramGeometry | null = null;
 let relationships: RoutedRelationship[] = [];
 let selectedKey: string | null = null;
+/** Click-to-highlight state for a relationship connector (see erdRenderer.ts's computeHighlightSets)
+ *  -- mutually exclusive with selectedKey, a table-click or a connector-click always clears the other. */
+let selectedRelationshipKey: string | null = null;
 let panzoom: PanZoomController | null = null;
 let pendingFrame = false;
 let saveTimer: number | undefined;
@@ -85,7 +92,7 @@ function renderAll(resetView: boolean): void {
   ensureGroupColorAssignments(database, layout);
   geometry = computeLayout(database, layout, maxSchemaColumns);
   relationships = routeAllForeignKeys(geometry, database.foreignKeys);
-  const rendered = renderDiagram(geometry, relationships, layout, palette, selectedKey);
+  const rendered = renderDiagram(geometry, relationships, layout, palette, selectedKey, selectedRelationshipKey);
   svgEl.innerHTML = rendered.markup;
 
   const hasTables = database.tables.length > 0;
@@ -124,6 +131,88 @@ function scheduleRender(): void {
   });
 }
 
+/**
+ * Bounding box (in diagram/user-space units) of everything the CURRENT click-to-highlight
+ * selection keeps at full opacity -- reuses erdRenderer.ts's own computeHighlightSets so this can
+ * never disagree with what's actually dimmed on screen. Returns null when nothing is highlighted
+ * (selectedKey and selectedRelationshipKey both null), which callers treat as "fit-to-highlight
+ * doesn't apply, use the default view instead."
+ */
+function computeHighlightBoundsRect(): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  if (!geometry) {
+    return null;
+  }
+  const highlight = computeHighlightSets(relationships, selectedKey, selectedRelationshipKey);
+  if (highlight.tableKeys === null) {
+    return null;
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let any = false;
+
+  highlight.tableKeys.forEach((key) => {
+    const box = geometry!.tables.get(key);
+    if (!box) {
+      return;
+    }
+    any = true;
+    minX = Math.min(minX, box.x);
+    minY = Math.min(minY, box.y);
+    maxX = Math.max(maxX, box.x + box.width);
+    maxY = Math.max(maxY, box.y + box.height);
+  });
+
+  if (highlight.relationshipKeys) {
+    relationships.forEach((r) => {
+      if (!highlight.relationshipKeys!.has(r.key)) {
+        return;
+      }
+      r.waypoints.forEach((p) => {
+        any = true;
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      });
+    });
+  }
+
+  return any ? { minX, minY, maxX, maxY } : null;
+}
+
+/**
+ * Called right after any click that changes the highlight selection (a table body/relationship
+ * click, or a whitespace click that clears it) -- animates the viewBox to fit the newly
+ * highlighted elements, or eases back to the default fit-all view once nothing is highlighted.
+ * Deliberately NOT called from the table-header's own pointerdown (see attachInteractionHandlers)
+ * -- that click also starts a drag, and animating the viewport out from under an active drag
+ * gesture would fight the user's own repositioning instead of helping them inspect connections.
+ */
+function updateHighlightView(): void {
+  if (!panzoom) {
+    return;
+  }
+  const bounds = computeHighlightBoundsRect();
+  const target: ViewBox = bounds
+    ? {
+        x: bounds.minX - HIGHLIGHT_FIT_PADDING,
+        y: bounds.minY - HIGHLIGHT_FIT_PADDING,
+        width: Math.max(50, bounds.maxX - bounds.minX + HIGHLIGHT_FIT_PADDING * 2),
+        height: Math.max(50, bounds.maxY - bounds.minY + HIGHLIGHT_FIT_PADDING * 2),
+      }
+    : panzoom.getBaseViewBox();
+
+  panzoom.suspended = true;
+  panzoom.animateTo(target, HIGHLIGHT_ANIM_MS, () => {
+    if (panzoom) {
+      panzoom.suspended = false;
+    }
+  });
+}
+
 function attachInteractionHandlers(): void {
   svgEl.querySelectorAll('.pgerd-table-header').forEach((el) => {
     el.addEventListener('pointerdown', (evt) => {
@@ -138,6 +227,7 @@ function attachInteractionHandlers(): void {
         return;
       }
       selectedKey = key;
+      selectedRelationshipKey = null;
       const rect = svgEl.getBoundingClientRect();
       const vb = panzoom!.getViewBox();
       dragState = {
@@ -199,13 +289,46 @@ function endDrag(): void {
 svgEl.addEventListener('pointerup', endDrag);
 svgEl.addEventListener('pointercancel', endDrag);
 
+/**
+ * Click-to-highlight (ported from Enkl.app's Tables & Columns ERD): clicking anywhere in a table
+ * NOT already handled by the header's own pointerdown above (i.e. clicking the body/rows) selects
+ * that table without starting a drag; clicking a relationship connector highlights just its own
+ * two tables and that one connector; clicking whitespace (canvas background, group containers,
+ * chips) clears back to fully visible. The header's own listener above calls stopPropagation(), so
+ * this never double-handles a header click.
+ */
 svgEl.addEventListener('pointerdown', (e) => {
   const target = e.target as Element;
-  if (!target.closest('.pgerd-table')) {
-    if (selectedKey !== null) {
+
+  const tableEl = target.closest('.pgerd-table');
+  if (tableEl) {
+    const key = tableEl.getAttribute('data-key');
+    if (key) {
+      selectedKey = key;
+      selectedRelationshipKey = null;
+      scheduleRender();
+      updateHighlightView();
+    }
+    return;
+  }
+
+  const relEl = target.closest('.pgerd-relationship');
+  if (relEl) {
+    const key = relEl.getAttribute('data-fk');
+    if (key) {
+      selectedRelationshipKey = key;
       selectedKey = null;
       scheduleRender();
+      updateHighlightView();
     }
+    return;
+  }
+
+  if (selectedKey !== null || selectedRelationshipKey !== null) {
+    selectedKey = null;
+    selectedRelationshipKey = null;
+    scheduleRender();
+    updateHighlightView();
   }
 });
 

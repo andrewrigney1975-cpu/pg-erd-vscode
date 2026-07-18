@@ -122,9 +122,26 @@ html, body {
 }
 
 .pgerd-table {
-  transition: none;
+  transition: opacity 0.15s ease;
 }
 
 .pgerd-row text {
   font-family: var(--vscode-editor-font-family, monospace);
+}
+
+/* Click-to-highlight (ported from Enkl.app's Tables & Columns ERD): clicking a table or a
+   relationship connector dims everything not connected to it down to 10% opacity; clicking
+   whitespace clears back to fully visible. See webview/erdRenderer.ts's computeHighlightSets and
+   main.ts's pointerdown handlers. */
+.pgerd-relationship {
+  transition: opacity 0.15s ease;
+}
+
+.pgerd-table.pgerd-dimmed,
+.pgerd-relationship.pgerd-dimmed {
+  opacity: 0.1;
+}
+
+.pgerd-connector-hitbox {
+  cursor: pointer;
 }

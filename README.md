@@ -39,6 +39,10 @@ hand-rolled inline SVG, same as the rest of a normal VS Code extension.
   that connection's ERD.
 - **Theme-aware** — every color is read from the active VS Code theme's `--vscode-*` CSS variables at
   render time, so the diagram repaints automatically when you switch themes.
+- **Click-to-highlight** — click a table to dim every table and connector it isn't directly related
+  to; click a relationship connector to dim everything except its own two tables and that one
+  connector; click empty canvas to clear back to fully visible. The view also smoothly pans/zooms
+  to fit whatever is currently highlighted, easing back to the default fit-all view once cleared.
 
 ## Using it
 
