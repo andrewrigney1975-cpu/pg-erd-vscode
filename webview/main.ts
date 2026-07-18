@@ -1,14 +1,14 @@
 import { DatabaseModel, DiagramLayout, emptyLayout } from '../src/types';
 import { buildStandaloneSvg, renderDiagram } from './erdRenderer';
 import { escapeXml } from './format';
-import { computeLayout, DiagramGeometry } from './layout';
+import { computeLayout, DiagramGeometry, effectiveGroupName } from './layout';
 import { PanZoomController, ViewBox } from './panzoom';
 import { rasterizeSvgToPngDataUrl } from './rasterize';
 import { routeAllForeignKeys, RoutedRelationship } from './routing';
 import { Palette, resolvePalette } from './theme';
 import { onHostMessage, postToHost } from './vscodeApi';
 
-const PNG_EXPORT_SCALE = 4;
+const PNG_EXPORT_SCALE = 2;
 
 let database: DatabaseModel | null = null;
 let layout: DiagramLayout = emptyLayout();
@@ -56,11 +56,33 @@ function scheduleSaveLayout(): void {
   }, 400);
 }
 
+/**
+ * Assigns every group name a color slot the first time it's ever seen, in encounter order, and
+ * persists it -- guarantees distinct colors across however many groups currently exist, rather
+ * than deriving a color from each name independently (which risks collisions for a small
+ * palette). Covers collapsed groups too, not just currently-visible ones, so a chip's color
+ * doesn't change the moment its group gets expanded.
+ */
+function ensureGroupColorAssignments(db: DatabaseModel, currentLayout: DiagramLayout): void {
+  let changed = false;
+  for (const t of db.tables) {
+    const name = effectiveGroupName(t, currentLayout);
+    if (!(name in currentLayout.groupColorAssignments)) {
+      currentLayout.groupColorAssignments[name] = Object.keys(currentLayout.groupColorAssignments).length;
+      changed = true;
+    }
+  }
+  if (changed) {
+    scheduleSaveLayout();
+  }
+}
+
 function renderAll(resetView: boolean): void {
   if (!database) {
     return;
   }
   palette = resolvePalette();
+  ensureGroupColorAssignments(database, layout);
   geometry = computeLayout(database, layout, maxSchemaColumns);
   relationships = routeAllForeignKeys(geometry, database.foreignKeys);
   const rendered = renderDiagram(geometry, relationships, layout, palette, selectedKey);

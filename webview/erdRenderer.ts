@@ -66,26 +66,47 @@ function renderTableBox(box: TableBox, palette: Palette, selected: boolean): str
   </g>`;
 }
 
-function renderGroupContainer(container: GroupContainer, palette: Palette, collapsed: boolean): string {
+/**
+ * Looks up the color assigned to `name` in `layout.groupColorAssignments` -- callers (main.ts)
+ * guarantee every group name has an entry before rendering, assigned in first-seen order and
+ * persisted, so colors stay stable across sessions and never collide for up to 6 groups at once.
+ */
+function groupColor(name: string, palette: Palette, layout: DiagramLayout): string {
+  const colors = palette.groupColors;
+  if (colors.length === 0) {
+    return palette.containerBorder;
+  }
+  const idx = layout.groupColorAssignments[name] ?? 0;
+  return colors[idx % colors.length];
+}
+
+function renderGroupContainer(
+  container: GroupContainer,
+  palette: Palette,
+  layout: DiagramLayout,
+  collapsed: boolean
+): string {
+  const color = groupColor(container.name, palette, layout);
   return `<g class="pgerd-group" data-group="${escapeXml(container.name)}">
     <rect x="${container.x}" y="${container.y}" width="${container.width}" height="${container.height}" rx="10"
-      fill="${palette.containerFill}" fill-opacity="0.18" stroke="${palette.containerBorder}" stroke-opacity="0.55"
+      fill="${color}" fill-opacity="0.14" stroke="${color}" stroke-opacity="0.75"
       stroke-width="1.5" stroke-dasharray="5 4"/>
     <rect class="pgerd-group-header" data-group="${escapeXml(container.name)}" data-collapse-toggle="1"
       x="${container.x}" y="${container.y}" width="160" height="22" fill="transparent" style="cursor:pointer"/>
     <text x="${container.x + 10}" y="${container.y + 16}" font-size="12" font-weight="700" letter-spacing="0.4"
-      fill="${palette.containerBorder}">${escapeXml(container.name)} ${collapsed ? '▸' : '▾'}</text>
+      fill="${color}">${escapeXml(container.name)} ${collapsed ? '▸' : '▾'}</text>
   </g>`;
 }
 
-function renderCollapsedChip(name: string, x: number, y: number, palette: Palette): string {
+function renderCollapsedChip(name: string, x: number, y: number, palette: Palette, layout: DiagramLayout): string {
+  const color = groupColor(name, palette, layout);
   const width = Math.max(90, name.length * 7.5 + 40);
   return `<g class="pgerd-group-chip" data-group="${escapeXml(name)}">
     <rect class="pgerd-group-header" data-group="${escapeXml(name)}" data-collapse-toggle="1"
       x="${x}" y="${y}" width="${width}" height="26" rx="13"
-      fill="${palette.containerFill}" stroke="${palette.containerBorder}" stroke-width="1.5" style="cursor:pointer"/>
+      fill="${palette.containerFill}" stroke="${color}" stroke-width="1.5" style="cursor:pointer"/>
     <text x="${x + width / 2}" y="${y + 17}" font-size="12" font-weight="700" text-anchor="middle"
-      fill="${palette.containerBorder}">${escapeXml(name)} ▸</text>
+      fill="${color}">${escapeXml(name)} ▸</text>
   </g>`;
 }
 
@@ -177,7 +198,7 @@ export function renderDiagram(
 ): RenderedDiagram {
   const relMarkup = relationships.map((r) => renderRelationship(r, palette)).join('\n');
   const groupMarkup = geometry.groups
-    .map((g) => renderGroupContainer(g, palette, false))
+    .map((g) => renderGroupContainer(g, palette, layout, false))
     .join('\n');
   const tableMarkup = [...geometry.tables.values()]
     .map((box) => renderTableBox(box, palette, box.key === selectedKey))
@@ -185,7 +206,9 @@ export function renderDiagram(
 
   const collapsed = layout.collapsedGroups;
   const chipMarkup = collapsed
-    .map((name, i) => renderCollapsedChip(name, geometry.bounds.minX, geometry.bounds.minY - 40 - i * 34, palette))
+    .map((name, i) =>
+      renderCollapsedChip(name, geometry.bounds.minX, geometry.bounds.minY - 40 - i * 34, palette, layout)
+    )
     .join('\n');
 
   const minX = geometry.bounds.minX - CANVAS_PADDING;

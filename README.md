@@ -32,7 +32,7 @@ hand-rolled inline SVG, same as the rest of a normal VS Code extension.
   grid column route vertically instead of backtracking through the source table.
 - **Pan, zoom, reset, export** — mouse-wheel zoom, drag-to-pan, a Reset button that returns to a
   fit-all view, "Export SVG" (a fully standalone, self-contained SVG file — theme colors are resolved
-  and inlined at export time, so it renders correctly outside VS Code too), and "Export PNG (4x)"
+  and inlined at export time, so it renders correctly outside VS Code too), and "Export PNG (2x)"
   (rasterized in the webview via `<canvas>`, no extra dependency).
 - **Draggable layout, persisted per connection** — drag any table to reposition it; the layout
   (positions, pan/zoom, collapsed schemas) is saved automatically and restored next time you open
@@ -102,7 +102,7 @@ the host, which shows a native save dialog).
 - One FK constraint draws one connector, anchored at its first column, even when the constraint is
   composite (spans multiple columns) — standard practice in most ER tools, but the diagram doesn't
   draw a separate line per column pair.
-- "Export PNG (4x)" is capped by the browser's ~16384px-per-side canvas limit. A very large diagram
-  (many schemas, `pgErd.maxSchemaColumns` set high) can exceed that at 4x; the export fails with an
-  explicit error telling you to use "Export SVG" instead or collapse some schemas first, rather than
-  silently producing a blank image.
+- "Export PNG (2x)" is capped by the browser's ~16384px-per-side canvas limit. An extremely large
+  diagram (many schemas, `pgErd.maxSchemaColumns` set high) can still exceed that even at 2x; the
+  export fails with an explicit error telling you to use "Export SVG" instead or collapse some
+  schemas first, rather than silently producing a blank image.

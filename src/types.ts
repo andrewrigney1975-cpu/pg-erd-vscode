@@ -92,10 +92,17 @@ export interface DiagramLayout {
    * by function ("Operational", "Governance", ...) without actually restructuring the database.
    */
   tableGroupOverrides: Record<string, string>;
+  /**
+   * Index into the group color palette, assigned the first time a group name is ever
+   * encountered and then kept forever -- guarantees distinct colors across however many groups
+   * currently exist (rather than hashing each name independently, which collides badly for a
+   * small palette and short, similar-length names like "Governance"/"Operational").
+   */
+  groupColorAssignments: Record<string, number>;
 }
 
 export function emptyLayout(): DiagramLayout {
-  return { positions: {}, viewBox: null, collapsedGroups: [], tableGroupOverrides: {} };
+  return { positions: {}, viewBox: null, collapsedGroups: [], tableGroupOverrides: {}, groupColorAssignments: {} };
 }
 
 /**
@@ -121,6 +128,8 @@ export function normalizeLayout(raw: unknown): DiagramLayout {
     collapsedGroups,
     tableGroupOverrides:
       r.tableGroupOverrides && typeof r.tableGroupOverrides === 'object' ? r.tableGroupOverrides : {},
+    groupColorAssignments:
+      r.groupColorAssignments && typeof r.groupColorAssignments === 'object' ? r.groupColorAssignments : {},
   };
 }
 

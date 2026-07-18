@@ -265,7 +265,7 @@ export class ErdPanelManager {
       <button id="refreshBtn" title="Re-read schema from the database">Refresh</button>
       <button id="groupsBtn" title="Bucket tables into custom named groups, independent of their real schema">Groups…</button>
       <button id="exportBtn" class="primary" title="Export as SVG">Export SVG</button>
-      <button id="exportPngBtn" class="primary" title="Export as a 4x-resolution PNG">Export PNG (4x)</button>
+      <button id="exportPngBtn" class="primary" title="Export as a 2x-resolution PNG">Export PNG (2x)</button>
     </div>
     <div id="errorBanner" class="hidden"></div>
     <div id="canvasWrap">

@@ -11,6 +11,8 @@ export interface Palette {
   pkAccent: string;
   fkAccent: string;
   selectionBorder: string;
+  /** Categorical palette for group containers -- one hue per group, cycled/hashed by name. */
+  groupColors: string[];
 }
 
 const VAR_FALLBACKS: Record<string, string> = {
@@ -24,8 +26,21 @@ const VAR_FALLBACKS: Record<string, string> = {
   '--vscode-charts-blue': '#3794ff',
   '--vscode-charts-yellow': '#d7ba7d',
   '--vscode-charts-green': '#89d185',
+  '--vscode-charts-red': '#f14c4c',
+  '--vscode-charts-orange': '#d18616',
+  '--vscode-charts-purple': '#b180d7',
   '--vscode-textLink-foreground': '#3794ff',
 };
+
+/** VS Code's own categorical chart palette -- theme-adaptive, so it stays legible in any theme. */
+const GROUP_COLOR_VARS = [
+  '--vscode-charts-blue',
+  '--vscode-charts-orange',
+  '--vscode-charts-green',
+  '--vscode-charts-purple',
+  '--vscode-charts-red',
+  '--vscode-charts-yellow',
+];
 
 function readVar(styles: CSSStyleDeclaration, name: string): string {
   const v = styles.getPropertyValue(name).trim();
@@ -47,5 +62,6 @@ export function resolvePalette(): Palette {
     pkAccent: readVar(styles, '--vscode-charts-yellow'),
     fkAccent: readVar(styles, '--vscode-descriptionForeground'),
     selectionBorder: readVar(styles, '--vscode-focusBorder'),
+    groupColors: GROUP_COLOR_VARS.map((name) => readVar(styles, name)),
   };
 }
