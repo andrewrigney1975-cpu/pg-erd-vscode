@@ -1,0 +1,192 @@
+{
+  "name": "pg-erd",
+  "displayName": "PostgreSQL ERD",
+  "description": "Generate interactive, theme-aware SVG entity-relationship diagrams from a live PostgreSQL database.",
+  "version": "0.1.0",
+  "publisher": "local-dev",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "postgres",
+    "postgresql",
+    "erd",
+    "database",
+    "diagram",
+    "svg"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pgErd.addConnection",
+        "title": "Add Connection",
+        "category": "PostgreSQL ERD",
+        "icon": "$(add)"
+      },
+      {
+        "command": "pgErd.editConnection",
+        "title": "Edit Connection",
+        "category": "PostgreSQL ERD",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "pgErd.deleteConnection",
+        "title": "Delete Connection",
+        "category": "PostgreSQL ERD",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "pgErd.duplicateConnection",
+        "title": "Duplicate Connection",
+        "category": "PostgreSQL ERD",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "pgErd.openErd",
+        "title": "Open ERD",
+        "category": "PostgreSQL ERD",
+        "icon": "$(type-hierarchy-sub)"
+      },
+      {
+        "command": "pgErd.refreshConnections",
+        "title": "Refresh Connections",
+        "category": "PostgreSQL ERD",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pgErd",
+          "title": "PostgreSQL ERD",
+          "icon": "media/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "pgErd": [
+        {
+          "id": "pgErdConnectionsView",
+          "name": "Connections"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "pgErdConnectionsView",
+        "contents": "No saved connections yet.\n[Add Connection](command:pgErd.addConnection)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "pgErd.addConnection",
+          "when": "view == pgErdConnectionsView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "pgErd.refreshConnections",
+          "when": "view == pgErdConnectionsView",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "pgErd.openErd",
+          "when": "view == pgErdConnectionsView && viewItem == pgErdConnection",
+          "group": "inline@1"
+        },
+        {
+          "command": "pgErd.editConnection",
+          "when": "view == pgErdConnectionsView && viewItem == pgErdConnection",
+          "group": "inline@2"
+        },
+        {
+          "command": "pgErd.openErd",
+          "when": "view == pgErdConnectionsView && viewItem == pgErdConnection",
+          "group": "1_pgErd@1"
+        },
+        {
+          "command": "pgErd.editConnection",
+          "when": "view == pgErdConnectionsView && viewItem == pgErdConnection",
+          "group": "1_pgErd@2"
+        },
+        {
+          "command": "pgErd.duplicateConnection",
+          "when": "view == pgErdConnectionsView && viewItem == pgErdConnection",
+          "group": "1_pgErd@3"
+        },
+        {
+          "command": "pgErd.deleteConnection",
+          "when": "view == pgErdConnectionsView && viewItem == pgErdConnection",
+          "group": "1_pgErd@4"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "pgErd.openErd",
+          "when": "false"
+        },
+        {
+          "command": "pgErd.editConnection",
+          "when": "false"
+        },
+        {
+          "command": "pgErd.deleteConnection",
+          "when": "false"
+        },
+        {
+          "command": "pgErd.duplicateConnection",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "PostgreSQL ERD",
+      "properties": {
+        "pgErd.connectionTimeoutMs": {
+          "type": "number",
+          "default": 10000,
+          "description": "Timeout in milliseconds when connecting to a PostgreSQL database."
+        },
+        "pgErd.includeSystemSchemas": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include system schemas (pg_catalog, information_schema, pg_toast) when introspecting a database."
+        },
+        "pgErd.maxSchemaColumns": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Upper bound on columns in a schema's auto-layout grid. The column count is chosen automatically to make each schema's diagram roughly 16:10 (width:height) -- this setting just caps how far that search is allowed to go, for schemas with an unusually large or oddly-shaped table set. Lower it to force a narrower, taller layout. Takes effect next time the ERD is opened or refreshed."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit -p .",
+    "vscode:prepublish": "node esbuild.js --production"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.6",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "pg": "^8.11.5"
+  },
+  "allowScripts": {
+    "esbuild@0.23.1": true
+  }
+}
